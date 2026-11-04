@@ -3,6 +3,7 @@
   "name": "bh-barbershop-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-04",
+  "previews": {},
   "observability": { "enabled": true },
   "vars": {
     "ALLOWED_ORIGIN": "http://localhost:8443",
