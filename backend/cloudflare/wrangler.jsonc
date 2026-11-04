@@ -5,13 +5,13 @@
   "compatibility_date": "2026-11-04",
   "observability": { "enabled": true },
   "vars": {
-    "ALLOWED_ORIGIN": "http://localhost:8443"
+    "ALLOWED_ORIGIN": "https://webpeluqueria.braismondragonlopez.workers.dev"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "bh-barbershop",
-      "database_id": "REPLACE_WITH_DATABASE_ID",
+      "database_id": "edab4dae-966b-4705-b739-3f205a983f8c",
       "migrations_dir": "migrations"
     }
   ]
