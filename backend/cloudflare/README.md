@@ -23,7 +23,7 @@ Set the production admin password as a Cloudflare secret (never put the real val
 npx wrangler secret put ADMIN_PASSWORD
 ```
 
-Set `ALLOWED_ORIGIN` in `wrangler.jsonc` to the exact public frontend origin, for example `https://bh.barbershop`. For local development use `http://localhost:8443`.
+Set `ALLOWED_ORIGIN` in `wrangler.jsonc` to the exact frontend origin. The current Worker is configured for local development at `http://localhost:8443`; do not change it to a public site origin until you decide to launch the website.
 
 ## Local Worker development
 
@@ -35,7 +35,7 @@ npx wrangler d1 migrations apply bh-barbershop --local
 npm run dev
 ```
 
-For the frontend, set `VITE_API_URL` to the Worker URL. In Cloudflare Pages, set it as a production build variable; locally it can go in `frontend/.env.local` (do not commit that file).
+For the local frontend, set `VITE_API_URL=https://bh-barbershop-api.braismondragonlopez.workers.dev` in `frontend/.env.local` (do not commit that file). This points the local site at the Cloudflare Worker and D1 database without publishing the frontend.
 
 ## Deploy
 
@@ -45,11 +45,3 @@ npx wrangler deploy
 ```
 
 The generated Worker URL becomes the frontend's `VITE_API_URL`. Deploy the Pages frontend after setting that value. D1 uses prepared statements; booking conflicts are checked inside the insert statement so concurrent attempts cannot claim an overlapping slot.
-
-## Retención de reservas
-
-Un Cron Trigger corre diariamente a las 00:10 UTC (01:10 o 02:10 en España, según el horario estacional). Borra reservas anteriores a la fecha local actual de Europe/Madrid, sesiones administrativas caducadas y contadores de acceso de más de 24 horas. Las citas del día actual permanecen hasta la siguiente ejecución.
-
-## Límite de solicitudes de reserva
-
-El endpoint público acepta como máximo 10 intentos por dirección IP en una ventana de 10 minutos. El control se aplica también a solicitudes inválidas y conflictos; solo se conserva el hash de la IP, y la fila se elimina en la limpieza diaria. La tabla se crea mediante la migración `0002_booking_rate_limit.sql`.

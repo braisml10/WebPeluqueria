@@ -36,6 +36,16 @@ function todayMadrid() {
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
   return `${value.year}-${value.month}-${value.day}`
 }
+function minuteNowMadrid() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date())
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return Number(value.hour) * 60 + Number(value.minute)
+}
+function isPastSlot(date: string, time: string) {
+  return date === todayMadrid() && toMinute(time) <= minuteNowMadrid()
+}
 function maxBookingDate() {
   const [year, month, day] = todayMadrid().split("-").map(Number)
   const targetMonth = month - 1 + 2
@@ -110,6 +120,7 @@ async function createBooking(env:Env,data:Record<string,unknown>) {
   if(!phonePattern.test(phone)) throw new Error("Formato incorrecto. Solo se aceptan números y un + opcional al principio (7–15 dígitos).")
   const spec=services[service]; if(!spec) throw new Error("El servicio no es válido.")
   const date=parseDate(data.date); const start=toMinute(String(data.time||""))
+  if(isPastSlot(date,String(data.time||""))) throw new Error("No se pueden reservar horas que ya han pasado.")
   if(!slots(date,spec.duration).includes(String(data.time))) throw new Error("La hora no está dentro del horario disponible.")
   const closed=await env.DB.prepare("SELECT reason FROM closures WHERE date=?").bind(date).first<{reason:string}>()
   if(closed) throw new Error(`La barbería está cerrada ese día: ${closed.reason}`)
@@ -156,7 +167,7 @@ export default {
         if(closed)return json({date,duration,available:[],closed:closed.reason},200,origin)
         const booked=await env.DB.prepare("SELECT time,duration FROM bookings WHERE date=? AND status!='cancelled'").bind(date).all<{time:string;duration:number}>()
         const occupied=booked.results.map(b=>[toMinute(b.time),toMinute(b.time)+b.duration])
-        const available=slots(date,duration).filter(t=>{const a=toMinute(t),b=a+duration;return !occupied.some(([x,y])=>a<y&&b>x)})
+        const available=slots(date,duration).filter(t=>{const a=toMinute(t),b=a+duration;return !isPastSlot(date,t)&&!occupied.some(([x,y])=>a<y&&b>x)})
         return json({date,duration,available},200,origin)
       }
       if(path==="/api/bookings"&&method==="POST") {
