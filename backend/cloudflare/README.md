@@ -45,3 +45,7 @@ npx wrangler deploy
 ```
 
 The generated Worker URL becomes the frontend's `VITE_API_URL`. Deploy the Pages frontend after setting that value. D1 uses prepared statements; booking conflicts are checked inside the insert statement so concurrent attempts cannot claim an overlapping slot.
+
+## Retención de reservas
+
+Un Cron Trigger corre diariamente a las 00:10 UTC (01:10 o 02:10 en España, según el horario estacional). Borra reservas anteriores a la fecha local actual de Europe/Madrid, sesiones administrativas caducadas y contadores de acceso de más de 24 horas. Las citas del día actual permanecen hasta la siguiente ejecución.

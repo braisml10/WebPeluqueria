@@ -30,9 +30,11 @@ function json(data: unknown, status = 200, origin = "*") {
 }
 
 function todayMadrid() {
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date())
+  }).formatToParts(new Date())
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${value.year}-${value.month}-${value.day}`
 }
 function parseDate(s: unknown, allowPast = false): string {
   if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("Fecha inválida.")
@@ -102,6 +104,15 @@ async function createBooking(env:Env,data:Record<string,unknown>) {
 }
 
 export default {
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const now = Date.now()
+    const today = todayMadrid()
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM bookings WHERE date < ?").bind(today),
+      env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").bind(now),
+      env.DB.prepare("DELETE FROM login_attempts WHERE window_started < ?").bind(now - 24 * 60 * 60 * 1000),
+    ])
+  },
   async fetch(req:Request,env:Env):Promise<Response> {
     const url=new URL(req.url), path=url.pathname, method=req.method
     const configuredOrigin=env.ALLOWED_ORIGIN||"http://localhost:8443"
