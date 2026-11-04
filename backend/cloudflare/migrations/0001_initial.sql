@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS bookings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  service TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  duration INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'requested',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS bookings_date_time ON bookings(date, time);
+CREATE TABLE IF NOT EXISTS closures (
+  date TEXT PRIMARY KEY,
+  reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS login_attempts (
+  ip TEXT PRIMARY KEY,
+  window_started INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);

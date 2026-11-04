@@ -10,3 +10,7 @@ node_modules/
 **/*.sqlite3-wal
 __pycache__/
 *.py[cod]
+
+.dev.vars
+**/.wrangler/
+backend/cloudflare/node_modules/
