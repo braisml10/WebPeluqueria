@@ -2,6 +2,7 @@ interface Env {
   DB: D1Database
   ADMIN_PASSWORD?: string
   ALLOWED_ORIGIN?: string
+  PUBLIC_BOOKING_ENABLED?: string
 }
 
 const services: Record<string, { duration: number; price: number }> = {
@@ -125,6 +126,7 @@ export default {
         return json({date,duration,available},200,origin)
       }
       if(path==="/api/bookings"&&method==="POST") {
+        if(env.PUBLIC_BOOKING_ENABLED!=="true")return json({error:"Las reservas online aún no están abiertas."},503,origin)
         const result=await createBooking(env,await body(req,10000));return json(result,201,origin)
       }
       if(path==="/api/admin/login"&&method==="POST") {
