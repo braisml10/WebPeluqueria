@@ -36,12 +36,21 @@ function todayMadrid() {
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
   return `${value.year}-${value.month}-${value.day}`
 }
+function maxBookingDate() {
+  const [year, month, day] = todayMadrid().split("-").map(Number)
+  const targetMonth = month - 1 + 2
+  const targetYear = year + Math.floor(targetMonth / 12)
+  const normalizedMonth = targetMonth % 12
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate()
+  return `${targetYear}-${String(normalizedMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`
+}
 function parseDate(s: unknown, allowPast = false): string {
   if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("Fecha inválida.")
   const d = new Date(`${s}T12:00:00Z`)
   if (!Number.isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== s) throw new Error("Fecha inválida.")
   if (d.getUTCDay() === 0) throw new Error("La barbería cierra los domingos.")
   if (!allowPast && s < todayMadrid()) throw new Error("No se pueden reservar fechas pasadas.")
+  if (!allowPast && s > maxBookingDate()) throw new Error("Solo se puede reservar con un máximo de 2 meses de antelación.")
   return s
 }
 function slots(day: string, duration: number): string[] {
@@ -183,7 +192,7 @@ export default {
           if(!old)return json({error:"No se encontró la cita."},404,origin)
           const data=await body(req),service=String(data.service??old.service),spec=services[service]
           if(!spec)throw new Error("Selecciona un servicio válido.")
-          const date=parseDate(data.date??old.date,true),time=String(data.time??old.time),start=toMinute(time)
+          const date=parseDate(data.date??old.date),time=String(data.time??old.time),start=toMinute(time)
           if(!slots(date,spec.duration).includes(time))throw new Error("La hora no coincide con el horario.")
           const closed=await env.DB.prepare("SELECT reason FROM closures WHERE date=?").bind(date).first()
           if(closed)throw new Error("Ese día está marcado como cerrado.")

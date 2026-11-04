@@ -177,6 +177,13 @@ function toKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
+function addMonthsClamped(date: Date, months: number) {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(date.getDate(), lastDay))
+  target.setHours(0, 0, 0, 0)
+  return target
+}
 function makeSlots(day: number, duration: number) {
   if (day === 0) return []
   const ranges =
@@ -230,6 +237,7 @@ function App() {
     value.setHours(0, 0, 0, 0)
     return value
   }, [])
+  const maxBookingDate = useMemo(() => addMonthsClamped(today, 2), [today])
   const [menuOpen, setMenuOpen] = useState(false)
   const [serviceIndex, setServiceIndex] = useState(0)
   const [viewDate, setViewDate] = useState(
@@ -743,7 +751,7 @@ function App() {
                     date ? (
                       <button
                         key={toKey(date)}
-                        disabled={date < today || date.getDay() === 0}
+                        disabled={date < today || date > maxBookingDate || date.getDay() === 0}
                         className={
                           selectedDate && toKey(selectedDate) === toKey(date)
                             ? "is-selected"
