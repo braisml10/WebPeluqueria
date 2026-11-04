@@ -49,3 +49,7 @@ The generated Worker URL becomes the frontend's `VITE_API_URL`. Deploy the Pages
 ## Retención de reservas
 
 Un Cron Trigger corre diariamente a las 00:10 UTC (01:10 o 02:10 en España, según el horario estacional). Borra reservas anteriores a la fecha local actual de Europe/Madrid, sesiones administrativas caducadas y contadores de acceso de más de 24 horas. Las citas del día actual permanecen hasta la siguiente ejecución.
+
+## Límite de solicitudes de reserva
+
+El endpoint público acepta como máximo 10 intentos por dirección IP en una ventana de 10 minutos. El control se aplica también a solicitudes inválidas y conflictos; solo se conserva el hash de la IP, y la fila se elimina en la limpieza diaria. La tabla se crea mediante la migración `0002_booking_rate_limit.sql`.

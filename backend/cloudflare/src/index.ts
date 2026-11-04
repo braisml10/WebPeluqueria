@@ -91,6 +91,19 @@ async function authorized(req:Request,env:Env,origin:string) {
   if(!(await isAdmin(req,env))) return json({error:"Sesión caducada. Vuelve a iniciar sesión."},401,origin)
   return null
 }
+async function bookingRetryAfter(req: Request, env: Env): Promise<number | null> {
+  const address = req.headers.get("cf-connecting-ip") || "unknown"
+  const ipHash = await hash(address)
+  const now = Date.now()
+  const row = await env.DB.prepare(`INSERT INTO booking_attempts(ip_hash, window_started, attempts)
+    VALUES(?,?,1) ON CONFLICT(ip_hash) DO UPDATE SET
+    attempts=CASE WHEN ?-window_started>=600000 THEN 1 ELSE attempts+1 END,
+    window_started=CASE WHEN ?-window_started>=600000 THEN ? ELSE window_started END
+    RETURNING attempts, window_started`).bind(ipHash,now,now,now,now).first<{attempts:number;window_started:number}>()
+  if (!row || row.attempts <= 10) return null
+  return Math.max(1, Math.ceil((row.window_started + 600000 - now) / 1000))
+}
+
 async function createBooking(env:Env,data:Record<string,unknown>) {
   const name=String(data.name||"").trim(), phone=String(data.phone||"").trim(), service=String(data.service||"")
   if(name.length<2||name.length>60||name.split(" ").some(p=>!p||![...p].every(c=>/\p{L}/u.test(c)))) throw new Error("Formato incorrecto. Usa solo letras y espacios; longitud permitida: 2–60 caracteres.")
@@ -120,6 +133,7 @@ export default {
       env.DB.prepare("DELETE FROM bookings WHERE date < ?").bind(today),
       env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").bind(now),
       env.DB.prepare("DELETE FROM login_attempts WHERE window_started < ?").bind(now - 24 * 60 * 60 * 1000),
+      env.DB.prepare("DELETE FROM booking_attempts WHERE window_started < ?").bind(now - 24 * 60 * 60 * 1000),
     ])
   },
   async fetch(req:Request,env:Env):Promise<Response> {
@@ -146,6 +160,8 @@ export default {
         return json({date,duration,available},200,origin)
       }
       if(path==="/api/bookings"&&method==="POST") {
+        const retryAfter=await bookingRetryAfter(req,env)
+        if(retryAfter!==null)return json({error:"Has enviado demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo.",retryAfterSeconds:retryAfter},429,origin)
         if(env.PUBLIC_BOOKING_ENABLED!=="true")return json({error:"Las reservas online aún no están abiertas."},503,origin)
         const result=await createBooking(env,await body(req,10000));return json(result,201,origin)
       }
