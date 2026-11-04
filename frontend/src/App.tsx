@@ -177,6 +177,25 @@ function toKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
+function madridClock(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minute: Number(values.hour) * 60 + Number(values.minute),
+  }
+}
+
+function isFutureAppointmentSlot(date: string, time: string, now = new Date()) {
+  const clock = madridClock(now)
+  if (date > clock.date) return true
+  if (date < clock.date) return false
+  const [hour, minute] = time.split(":").map(Number)
+  return hour * 60 + minute > clock.minute
+}
+
 function addMonthsClamped(date: Date, months: number) {
   const target = new Date(date.getFullYear(), date.getMonth() + months, 1)
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
@@ -256,13 +275,25 @@ function App() {
     null,
   )
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [clockNow, setClockNow] = useState(() => new Date())
+  const [closedReason, setClosedReason] = useState("")
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
   const [bookingError, setBookingError] = useState("")
   const [bookingSaving, setBookingSaving] = useState(false)
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 15_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const displayedGallery = gallery.map((photo, index) => ({
+    src: siteContent[`galleryPhoto${index + 1}`] || photo.src,
+    alt: siteContent[`galleryAlt${index + 1}`] || photo.alt,
+    label: siteContent[`galleryLabel${index + 1}`] || photo.label,
+  }))
 
   useEffect(() => {
     if (!selectedDate) {
       setAvailableSlots([])
+      setClosedReason("")
       return
     }
     const controller = new AbortController()
@@ -277,12 +308,15 @@ function App() {
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || "No se pudo cargar la disponibilidad.")
         setAvailableSlots(data.available)
-        setSelectedTime((current) => data.available.includes(current) ? current : "")
+        setClosedReason(typeof data.closed === "string" ? data.closed : "")
+        const futureSlots = data.available.filter((time: string) => isFutureAppointmentSlot(toKey(selectedDate), time))
+        setSelectedTime((current) => futureSlots.includes(current) ? current : "")
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name !== "AbortError") {
           setBookingError("No se pudo consultar la disponibilidad. Comprueba que el servidor está activo.")
           setAvailableSlots([])
+          setClosedReason("")
         }
       })
       .finally(() => setAvailabilityLoading(false))
@@ -304,7 +338,13 @@ function App() {
     ]
   }, [viewDate])
 
-  const slots = availableSlots
+  const slots = useMemo(() => {
+    if (!selectedDate) return []
+    return availableSlots.filter(time => isFutureAppointmentSlot(toKey(selectedDate), time, clockNow))
+  }, [availableSlots, selectedDate, clockNow])
+  useEffect(() => {
+    if (selectedTime && !slots.includes(selectedTime)) setSelectedTime("")
+  }, [selectedTime, slots])
   const isSunday = new Date().getDay() === 0
 
   const chooseService = (index: number) => {
@@ -324,12 +364,18 @@ function App() {
     if (date < today || date.getDay() === 0) return
     setSelectedDate(date)
     setSelectedTime("")
+    setClosedReason("")
     setBookingError("")
   }
 
   const submitBooking = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedDate || !selectedTime) return
+    if (!isFutureAppointmentSlot(toKey(selectedDate), selectedTime)) {
+      setSelectedTime("")
+      setBookingError("Esa hora ya ha pasado. Elige una hora futura.")
+      return
+    }
     const data = new FormData(event.currentTarget)
     const name = String(data.get("name") || "")
     const booking: BookingDetails = {
@@ -351,6 +397,12 @@ function App() {
 
   const confirmBooking = async () => {
     if (!pendingBooking || bookingSaving) return
+    if (!isFutureAppointmentSlot(pendingBooking.date, pendingBooking.time)) {
+      setPendingBooking(null)
+      setSelectedTime("")
+      setBookingError("Esa hora ya ha pasado. Elige una hora futura.")
+      return
+    }
     setBookingSaving(true)
     setBookingError("")
     try {
@@ -432,17 +484,17 @@ function App() {
         <img
           className="hero__image"
           src={siteContent.heroPhoto || "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=2000&q=90"}
-          alt="Experiencia de barbería B&H"
+          alt={siteContent.heroPhotoAlt ?? "Experiencia de barbería B&H"}
         />
         <div className="hero__veil" />
         <div className="hero__content">
           <p className="eyebrow">
-            <span /> Barbería contemporánea · Mollet del Vallès
+            <span /> {siteContent.heroEyebrow ?? "Barbería contemporánea · Mollet del Vallès"}
           </p>
           <h1>
             {siteContent.heroTitle ?? "Tu estilo."}
             <br />
-            <em>Nuestra firma.</em>
+            <em>{siteContent.heroAccent ?? "Nuestra firma."}</em>
           </h1>
           <p className="hero__copy">
             {siteContent.heroCopy ?? "Cortes con carácter, técnica precisa y flow urbano. Un espacio creado para que salgas siendo tu mejor versión."}
@@ -487,19 +539,19 @@ function App() {
         <div className="section-number">01</div>
         <div className="about__intro">
           <p className="eyebrow eyebrow--dark">
-            <span /> El barbero
+            <span /> {siteContent.aboutEyebrow ?? "El barbero"}
           </p>
           <h2>
-            Más que un corte,
+            {siteContent.aboutHeading ?? "Más que un corte,"}
             <br />
-            <em>una forma de expresarte.</em>
+            <em>{siteContent.aboutAccent ?? "una forma de expresarte."}</em>
           </h2>
         </div>
         <div className="about__grid">
           <div className="about__image-wrap">
             <img
-              src="https://images.unsplash.com/photo-1604355240616-5e907f42b431?auto=format&fit=crop&w=1000&q=88"
-              alt="Barbero de B&H Barbershop"
+              src={siteContent.aboutPhoto || "https://images.unsplash.com/photo-1604355240616-5e907f42b431?auto=format&fit=crop&w=1000&q=88"}
+              alt={siteContent.aboutPhotoAlt || "Barbero de B&H Barbershop"}
             />
             <div className="about__badge">
               B&H
@@ -512,14 +564,10 @@ function App() {
               {siteContent.aboutText ?? "Aquí no seguimos tendencias: las adaptamos a ti."}
             </p>
             <p>
-              En B&H cada corte empieza escuchando. Estudiamos tus facciones, tu
-              cabello y tu estilo para crear un acabado que se sienta
-              auténticamente tuyo.
+              {siteContent.aboutBodyOne ?? "En B&H cada corte empieza escuchando. Estudiamos tus facciones, tu cabello y tu estilo para crear un acabado que se sienta auténticamente tuyo."}
             </p>
             <p>
-              Dominamos el degradado, el corte a tijera y el perfilado para
-              convertir cada cita en una experiencia precisa, relajada y
-              personal.
+              {siteContent.aboutBodyTwo ?? "Dominamos el degradado, el corte a tijera y el perfilado para convertir cada cita en una experiencia precisa, relajada y personal."}
             </p>
             <div className="signature">
               B&H <span>Barber</span>
@@ -541,17 +589,16 @@ function App() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">
-              <span /> Carta de servicios
+              <span /> {siteContent.servicesEyebrow ?? "Carta de servicios"}
             </p>
             <h2>
-              Elige tu
+              {siteContent.servicesHeading ?? "Elige tu"}
               <br />
-              <em>próximo look.</em>
+              <em>{siteContent.servicesAccent ?? "próximo look."}</em>
             </h2>
           </div>
           <p>
-            Sin complicaciones. Tú eliges el servicio, nosotros nos encargamos
-            del resultado.
+            {siteContent.servicesCopy ?? "Sin complicaciones. Tú eliges el servicio, nosotros nos encargamos del resultado."}
           </p>
         </div>
         <div className="service-list">
@@ -566,7 +613,7 @@ function App() {
               </span>
               <span className="service-row__name">
                 {service.name}
-                <small>{service.detail}</small>
+                <small>{siteContent[`serviceDetail${index}`] ?? service.detail}</small>
               </span>
               <span className="service-row__meta">
                 <span>{service.duration} min</span>
@@ -584,12 +631,12 @@ function App() {
         <div className="section-heading section-heading--light">
           <div>
             <p className="eyebrow eyebrow--dark">
-              <span /> Últimos trabajos
+              <span /> {siteContent.galleryEyebrow ?? "Últimos trabajos"}
             </p>
             <h2>
-              Hecho con pulso.
+              {siteContent.galleryHeading ?? "Hecho con pulso."}
               <br />
-              <em>Llevado con actitud.</em>
+              <em>{siteContent.galleryAccent ?? "Llevado con actitud."}</em>
             </h2>
           </div>
           <a
@@ -602,7 +649,7 @@ function App() {
           </a>
         </div>
         <div className="gallery">
-          {gallery.map((photo, index) => (
+          {displayedGallery.map((photo, index) => (
             <figure
               className={`gallery__item gallery__item--${index + 1}`}
               key={photo.src}
@@ -620,14 +667,14 @@ function App() {
       <section className="booking section-dark" id="reservar">
         <div className="booking__heading">
           <p className="eyebrow">
-            <span /> Reserva online
+            <span /> {siteContent.bookingEyebrow ?? "Reserva online"}
           </p>
           <h2>
-            Tu próxima cita,
+            {siteContent.bookingHeading ?? "Tu próxima cita,"}
             <br />
-            <em>a un par de clics.</em>
+            <em>{siteContent.bookingAccent ?? "a un par de clics."}</em>
           </h2>
-          <p>Selecciona servicio, día y hora. Te guardamos el sillón.</p>
+          <p>{siteContent.bookingCopy ?? "Selecciona servicio, día y hora. Te guardamos el sillón."}</p>
         </div>
 
         {confirmation ? (
@@ -788,9 +835,10 @@ function App() {
                       month: "long",
                     })}
                   </p>
+                  {closedReason && <p className="closed-day-notice" role="status">Cerrado por {closedReason.charAt(0).toLocaleUpperCase("es-ES") + closedReason.slice(1)}</p>}
                   {availabilityLoading ? (
                     <p className="selected-day">Consultando horarios disponibles…</p>
-                  ) : slots.length === 0 ? (
+                  ) : slots.length === 0 && !closedReason ? (
                     <p className="selected-day">No quedan horarios disponibles para este día.</p>
                   ) : null}
                   <div className="time-grid">
@@ -914,24 +962,24 @@ function App() {
         <div className="location__image">
           <img
             src={siteContent.studioPhoto || "/images/bh-studio.webp"}
-            alt="Interior de B&H Barbershop en Mollet del Vallès"
+            alt={siteContent.studioPhotoAlt ?? "Interior de B&H Barbershop en Mollet del Vallès"}
           />
-          <span>Tu sitio. Tu momento.</span>
+          <span>{siteContent.studioCaption ?? "Tu sitio. Tu momento."}</span>
         </div>
         <div className="location__content">
           <p className="eyebrow eyebrow--dark">
             <span /> Ven a vernos
           </p>
           <h2>
-            Estamos en
+            {siteContent.locationHeading ?? "Estamos en"}
             <br />
             <em>{siteContent.locationText ?? "Mollet del Vallès."}</em>
           </h2>
           <div className="address">
             <Icon name="location" size={24} />
             <div>
-              <strong>Carrer d'Anselm Clavé, 31</strong>
-              <span>08100 Mollet del Vallès, Barcelona</span>
+              <strong>{siteContent.streetAddress ?? "Carrer d'Anselm Clavé, 31"}</strong>
+              <span>{siteContent.postalAddress ?? "08100 Mollet del Vallès, Barcelona"}</span>
             </div>
           </div>
           <a
@@ -947,11 +995,11 @@ function App() {
               <Icon name="clock" size={21} />
               <strong>Horario</strong>
             </div>
-            {hours.map(([day, first, second]) => (
+            {hours.map(([day, first, second], index) => (
               <div className={day === "Domingo" ? "is-closed" : ""} key={day}>
                 <span>{day}</span>
-                <span>{first}</span>
-                <span>{second}</span>
+                <span>{siteContent[`hoursFirst${index}`] ?? first}</span>
+                <span>{siteContent[`hoursSecond${index}`] ?? second}</span>
               </div>
             ))}
           </div>
@@ -962,9 +1010,9 @@ function App() {
         <div className="footer__main">
           <Brand />
           <h2>
-            ¿Listo para tu
+            {siteContent.footerHeading ?? "¿Listo para tu"}
             <br />
-            <em>próximo corte?</em>
+            <em>{siteContent.footerAccent ?? "próximo corte?"}</em>
           </h2>
           <a className="button button--light" href="#reservar">
             Reserva ahora <Icon name="arrow" />

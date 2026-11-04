@@ -5,8 +5,8 @@
   "compatibility_date": "2026-11-04",
   "observability": { "enabled": true },
   "vars": {
-    "ALLOWED_ORIGIN": "https://bh-barbershop.pages.dev",
-    "PUBLIC_BOOKING_ENABLED": "false"
+    "ALLOWED_ORIGIN": "http://localhost:8443",
+    "PUBLIC_BOOKING_ENABLED": "true"
   },
   "triggers": { "crons": ["10 0 * * *"] },
   "d1_databases": [
