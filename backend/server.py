@@ -115,6 +115,18 @@ def minute(value: str) -> int:
     return hour * 60 + mins
 
 
+def has_booking_conflict(db: sqlite3.Connection, day: str, start: int, duration: int) -> bool:
+    bookings = db.execute(
+        "SELECT time,duration FROM bookings WHERE date=? AND status!='cancelled'",
+        (day,),
+    )
+    return any(
+        start < minute(row["time"]) + row["duration"]
+        and start + duration > minute(row["time"])
+        for row in bookings
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "BHBookings/1.0"
 
@@ -223,12 +235,7 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/api/bookings":
             return self.send_json({"error": "Ruta no encontrada."}, 404)
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if length < 1 or length > 10000:
-                raise ValueError("Solicitud vacía o demasiado grande.")
-            payload = json.loads(self.rfile.read(length))
-            if not isinstance(payload, dict):
-                raise ValueError("El cuerpo debe ser un objeto JSON.")
+            payload = read_body(self, limit=10000)
             name = str(payload.get("name", "")).strip()
             phone = str(payload.get("phone", "")).strip()
             service = str(payload.get("service", ""))
@@ -264,12 +271,9 @@ class Handler(BaseHTTPRequestHandler):
             db = connect()
             try:
                 db.execute("BEGIN IMMEDIATE")
-                collisions = db.execute("SELECT time,duration FROM bookings WHERE date=? AND status!='cancelled'", (day.isoformat(),)).fetchall()
-                for row in collisions:
-                    other_start = minute(row["time"])
-                    if start < other_start + row["duration"] and start + duration > other_start:
-                        db.rollback()
-                        return self.send_json({"error": "Ese horario acaba de ser reservado. Elige otro slot.", "code": "SLOT_TAKEN"}, 409)
+                if has_booking_conflict(db, day.isoformat(), start, duration):
+                    db.rollback()
+                    return self.send_json({"error": "Ese horario acaba de ser reservado. Elige otro slot.", "code": "SLOT_TAKEN"}, 409)
                 cursor = db.execute("INSERT INTO bookings(name,phone,service,price,date,time,duration) VALUES(?,?,?,?,?,?,?)",
                                     (name, phone, service, price, day.isoformat(), f"{start // 60:02d}:{start % 60:02d}", duration))
                 booking_id = cursor.lastrowid
@@ -290,9 +294,8 @@ class Handler(BaseHTTPRequestHandler):
         start = minute(data.get("time", ""))
         if (start, start + duration) not in intervals(day, duration): raise ValueError("La hora no coincide con el horario.")
         db.execute("BEGIN IMMEDIATE")
-        for row in db.execute("SELECT time,duration FROM bookings WHERE date=? AND status!='cancelled'", (day.isoformat(),)):
-            other = minute(row["time"])
-            if start < other + row["duration"] and start + duration > other: raise ValueError("Ese horario ya está ocupado.")
+        if has_booking_conflict(db, day.isoformat(), start, duration):
+            raise ValueError("Ese horario ya está ocupado.")
         cur = db.execute("INSERT INTO bookings(name,phone,service,price,date,time,duration) VALUES(?,?,?,?,?,?,?)", (str(data.get("name", ""))[:60], str(data.get("phone", ""))[:20], service, price, day.isoformat(), f"{start//60:02d}:{start%60:02d}", duration))
         return self.send_json({"id": cur.lastrowid}, 201)
 
